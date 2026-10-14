@@ -33,6 +33,7 @@ sechs Monaten Pause als Erstes wissen will.
 |------|---------|------|
 | | `!RAUM_ID:HOMESERVER` | Changesets (WHODIDIT) |
 | | `!RAUM_ID:HOMESERVER` | Notes (osm.org) |
+| | `!RAUM_ID` | Neueröffnungen (bald-in.de, Spüre Fulda) |
 
 Bounding Box: `MIN_LON,MIN_LAT,MAX_LON,MAX_LAT`
 Entspricht Relation [rXXXXX](https://www.openstreetmap.org/relation/XXXXX).

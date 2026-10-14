@@ -283,6 +283,16 @@ Beobachtete Werte, kein Richtwert für anderswo:
 |------|------|---------------|---------|
 | Notes (osm.org) | 100 Einträge | ~2,9 pro Tag | 100 ÷ 2,9 ≈ **35 Tage** |
 | Changesets (WHODIDIT) | 20 Einträge | ~21 pro Tag | 20 ÷ 21 ≈ **knapp 1 Tag** |
+| Neueröffnungen (bald-in.de) | 43 Einträge | ~0,6 pro Tag | 43 ÷ 0,6 ≈ **10 Wochen** |
+| Neueröffnungen (Spüre Fulda) | 3 Beiträge | wenige pro Jahr | alle seit 12/2025, **> 10 Monate** |
+
+Die beiden Neueröffnungs-Feeds sind bereits auf Fulda gefiltert (`?stadt=fulda`
+bzw. Kategorie-Feed). Stand Oktober 2026; es sind Sammel- bzw. Ankündigungs-
+seiten, keine Quelle zum Übernehmen nach OSM — nur Hinweise fürs Mapping.
+
+`neueroeffnung.info` ist bewusst nicht abonniert: Der Feed ist DACH-weit
+(~130 Einträge pro Tag, Fenster ≈ 1 Tag) und lässt sich serverseitig nicht
+filtern. Ohne vorgeschalteten Filter würde er den Raum fluten.
 
 Die Changesets sind also der enge Fall: Der Bot darf keinen ganzen Tag stehen.
 Bei den Notes wären fünf Wochen Ausfall verkraftbar.
