@@ -7,3 +7,34 @@ services:
       - "127.0.0.1:29316:29316"
     volumes:
       - ./data:/data
+
+  # Filter proxy for neueroeffnung.info, see README "Filter für neueroeffnung.info".
+  # No published port: maubot reaches it as http://nf-filter:8080/feed.json.
+  nf-filter:
+    image: python:3.13-slim
+    restart: unless-stopped
+    command: ["python", "-u", "/app/filter.py"]
+    environment:
+      # Landkreis Fulda: all 23 municipalities. Checked 2026-11-04 against OSM:
+      # addr:postcode of all ~43,900 addresses inside r62700 (Overpass). Only
+      # stray hits outside this list: 36166 (1 address), 36419 (3 addresses).
+      PLZ: >-
+        36037 36039 36041 36043 36088 36093 36100 36103 36115 36119 36124
+        36129 36132 36137 36142 36145 36148 36151 36154 36157 36160 36163
+        36167 36169 36364
+      SLUGS: >-
+        fulda huenfeld gersfeld tann bad-salzschlirf burghaun dipperz
+        ebersburg ehrenberg eichenzell eiterfeld flieden grossenlueder hilders
+        hofbieber hosenfeld kalbach kuenzell neuhof nuesttal petersberg
+        poppenhausen rasdorf
+      FEED_TITLE: "neueroeffnung.info – Landkreis Fulda"
+    volumes:
+      - ./nf-filter/filter.py:/app/filter.py:ro
+      - nf-cache:/cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 5m
+      start_period: 10m
+
+volumes:
+  nf-cache:
