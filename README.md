@@ -285,14 +285,16 @@ Beobachtete Werte, kein Richtwert für anderswo:
 | Changesets (WHODIDIT) | 20 Einträge | ~21 pro Tag | 20 ÷ 21 ≈ **knapp 1 Tag** |
 | Neueröffnungen (bald-in.de) | 43 Einträge | ~0,6 pro Tag | 43 ÷ 0,6 ≈ **10 Wochen** |
 | Neueröffnungen (Spüre Fulda) | 3 Beiträge | wenige pro Jahr | alle seit 12/2025, **> 10 Monate** |
+| Neueröffnungen (neueroeffnung.info, über `nf-filter`) | alle Treffer der letzten 14 Tage | wenige pro Woche | **14 Tage** (`KEEP_DAYS`) |
 
 Die beiden Neueröffnungs-Feeds sind bereits auf Fulda gefiltert (`?stadt=fulda`
 bzw. Kategorie-Feed). Stand Oktober 2026; es sind Sammel- bzw. Ankündigungs-
 seiten, keine Quelle zum Übernehmen nach OSM — nur Hinweise fürs Mapping.
 
-`neueroeffnung.info` ist bewusst nicht abonniert: Der Feed ist DACH-weit
-(~130 Einträge pro Tag, Fenster ≈ 1 Tag) und lässt sich serverseitig nicht
-filtern. Ohne vorgeschalteten Filter würde er den Raum fluten.
+`neueroeffnung.info` ist DACH-weit (~150 Einträge pro Tag, Fenster ≈ 1 Tag)
+und lässt sich serverseitig nicht filtern. Der Bot abonniert ihn deshalb nicht
+direkt, sondern über den Filter-Proxy `nf-filter`, siehe
+[Filter für neueroeffnung.info](#filter-für-neueroeffnunginfo).
 
 Die Changesets sind also der enge Fall: Der Bot darf keinen ganzen Tag stehen.
 Bei den Notes wären fünf Wochen Ausfall verkraftbar.
@@ -340,6 +342,52 @@ WHODIDIT kann statt `bbox=` auch `wkt=POLYGON((...))`, dann exakt auf die
 Kreisgrenze zugeschnitten (Raster ca. 1 km, Koordinaten sind lat×100 lon×100).
 Ergibt bei Fulda eine ~1,7 kB lange URL — funktioniert, ist aber unhandlich.
 
+## Filter für neueroeffnung.info
+
+`nf-filter` ist ein zweiter Container im selben Compose (Python, nur stdlib,
+`nf-filter/filter.py`). Er hat keinen veröffentlichten Port. maubot erreicht ihn
+über das Compose-Netz.
+
+Ablauf:
+
+1. Alle 10 Minuten (`POLL_SECONDS`) holt der Proxy den DACH-weiten Feed.
+2. Für jeden neuen Eintrag ruft er einmal die Detailseite ab, mit 1 s Pause
+   (`REQUEST_DELAY`). Dort steht die Adresse mit PLZ.
+3. Liegt die PLZ in `PLZ`, ist der Eintrag ein Treffer. Hat die Seite keine
+   PLZ, entscheidet der Ort im Link (`SLUGS`).
+4. Er liefert die Treffer der letzten 14 Tage (`KEEP_DAYS`) als JSON Feed unter
+   `http://nf-filter:8080/feed.json`.
+
+Warum PLZ und nicht der Ort im Link: Die Seite verwendet auch Ortsteile
+(`mittelkalbach/…`), und Namen wie `kalbach`, `tann`, `neuhof` oder
+`petersberg` gibt es mehrfach. `frankfurt-am-main/clubhaus-kalbach` fällt so
+korrekt heraus.
+
+Der Proxy merkt sich in einem Volume (`nf-cache`), welche Einträge er schon
+geprüft hat. Nach dem ersten Start ruft er deshalb einmal ~150 Detailseiten ab
+(ca. 4 Minuten), danach nur die neuen, also ~1 pro 10 Minuten. Die `robots.txt`
+der Seite erlaubt die Detailseiten.
+
+Weil der Proxy die Treffer 14 Tage hält, ist das Fenster für maubot 14 Tage
+statt 1 Tag. Das enge Fenster liegt jetzt beim Proxy: Steht `nf-filter` länger
+als ca. einen Tag, verpasst er Einträge.
+
+Abo im Neueröffnungs-Raum:
+
+    !rss subscribe http://nf-filter:8080/feed.json
+
+Für eine andere Region: `PLZ` und `SLUGS` in `compose.yaml` anpassen. Die PLZ
+für den Landkreis Fulda decken alle 23 Gemeinden ab. 36110 (Schlitz) und 36166
+(Haunetal) gehören zu Nachbarkreisen und fehlen bewusst.
+
+Logs und Zustand:
+
+    docker compose logs -f nf-filter
+    docker compose exec nf-filter python -c \
+      "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/health').read())"
+
+`/health` meldet `stale` (HTTP 503), wenn drei Abrufe nacheinander fehlschlagen.
+
 ## Betrieb
 
 Logs:
@@ -361,8 +409,13 @@ abläuft. Siehe [Die Feeds](#die-feeds).
 Direkt in die Plugin-Datenbank schauen (Abos, Fehlerzähler, zuletzt gesehene
 Einträge):
 
-    docker compose exec maubot sqlite3 /data/dbs/rss.db \
-      "select id, error_count, url from feed; select room_id, feed_id from subscription;"
+    docker compose exec maubot python3 -c "
+    import sqlite3
+    db = sqlite3.connect('/data/dbs/rss.db')
+    for q in ('select id, error_count, url from feed',
+              'select room_id, feed_id from subscription'):
+        for row in db.execute(q): print(*row)
+    "
 
 ## Was nicht im Repo steht
 
