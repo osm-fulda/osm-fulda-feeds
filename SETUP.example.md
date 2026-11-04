@@ -40,8 +40,13 @@ Entspricht Relation [rXXXXX](https://www.openstreetmap.org/relation/XXXXX).
 
 Aktueller Stand direkt aus der Datenbank:
 
-    docker compose exec maubot sqlite3 /data/dbs/rss.db \
-      "select id, error_count, url from feed; select room_id, feed_id from subscription;"
+    docker compose exec maubot python3 -c "
+    import sqlite3
+    db = sqlite3.connect('/data/dbs/rss.db')
+    for q in ('select id, error_count, url from feed',
+              'select room_id, feed_id from subscription'):
+        for row in db.execute(q): print(*row)
+    "
 
 ## Instanz-Config
 
