@@ -415,10 +415,18 @@ Ablauf:
 2. Er wendet die Prüfungen auf das Ergebnis an und vergleicht die Funde mit dem
    letzten Lauf.
 3. Nur Funde, die beim letzten Lauf nicht da waren, kommen in den Feed. Ein
-   behobener Fehler, der später wieder auftaucht, ist wieder neu.
+   behobener Fehler, der später wieder auftaucht, ist wieder neu. Ausnahme:
+   Taucht er innerhalb von 7 Tagen wieder auf (`GRACE_DAYS`), meldet `sentinel`
+   ihn nicht noch einmal. Das verhindert doppelte Meldungen nach einer falschen
+   oder veralteten Antwort eines Overpass-Servers.
 4. Schlägt die Abfrage fehl, versucht er es alle 30 Minuten erneut
    (`RETRY_MINUTES`). Die Overpass-Server sind oft überlastet. Ein verpasster Tag
-   kostet nichts, weil jeder Lauf den aktuellen Zustand prüft.
+   kostet nichts, weil jeder Lauf den aktuellen Zustand prüft. Eine Antwort mit
+   älteren Daten als beim letzten Lauf verwirft er.
+
+Ein fester Eintrag „sentinel ist aktiv“ steht immer im Feed. Beim Abonnieren
+speichert maubot ihn still als „gesehen“. Er sorgt dafür, dass der Feed nie leer
+ist, siehe [Betrieb](#betrieb).
 
 Mehr als 20 neue Funde in einem Lauf (`MAX_ITEMS_PER_RUN`) meldet er nicht
 einzeln, sondern als eine Sammelmeldung. Das schützt den Raum nach einer großen
@@ -479,11 +487,13 @@ kommt also nicht sofort nach der Reparatur zurück — Instanz neu starten, wenn
 schneller gehen soll.
 
 Auch ein **leerer** Feed zählt für das Plugin als Fehler (`rss/bot.py`,
-`if not entries:`). `nf-filter` und `sentinel` sind oft leer, ihr Fehlerzähler
-in `rss.db` steigt deshalb, ohne dass etwas kaputt ist. Folge: Der erste neue
-Eintrag nach einer langen leeren Phase kommt einige Stunden später an. Verloren
-geht nichts, solange `max_backoff` kürzer ist als die Haltezeit des Feeds
-(`KEEP_DAYS`).
+`if not entries:`). `nf-filter` ist oft leer, sein Fehlerzähler in `rss.db`
+steigt deshalb, ohne dass etwas kaputt ist. Folge: Der erste neue Eintrag nach
+einer langen leeren Phase kommt später an. Mit `update_interval: 5` sind das
+nach zwei leeren Wochen rund 7,5 Stunden, mit dem Standardwert 60 deutlich mehr.
+Verloren geht nichts, solange `max_backoff` kürzer ist als die Haltezeit des
+Feeds (`KEEP_DAYS`). `sentinel` hat dieses Problem nicht, weil sein
+Status-Eintrag den Feed nie leer lässt.
 
 Faustregel zur Kontrolle: Ein ganzer stiller Tag im Changeset-Raum heißt, dass
 etwas kaputt ist — und zugleich, dass das Fenster des WHODIDIT-Feeds gerade

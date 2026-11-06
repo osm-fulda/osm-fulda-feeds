@@ -9,17 +9,18 @@ on a side that also has sidewalk:<side>=separate. Then routers see the
 sidewalk two times. A typical cause is the StreetComplete or iD question
 "Is there a sidewalk here?".
 
-Stdlib only. Configuration through environment variables, see README.
-Run "python sentinel.py --once" to print the findings and exit.
+The script uses only the standard library. Environment variables set the
+configuration, see README. Run "python sentinel.py --once" to print the
+findings and stop.
 """
 
+import http.client
 import json
 import logging
 import os
 import sys
 import threading
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -41,6 +42,9 @@ RETRY_MINUTES = int(os.environ.get("RETRY_MINUTES", "30"))
 # More new findings than this in one run: one summary item instead.
 MAX_ITEMS_PER_RUN = int(os.environ.get("MAX_ITEMS_PER_RUN", "20"))
 KEEP_DAYS = int(os.environ.get("KEEP_DAYS", "30"))
+# A finding that disappears and then appears again within this time gets no
+# second message. This stops repeated posts after a bad or old Overpass result.
+GRACE_DAYS = int(os.environ.get("GRACE_DAYS", "7"))
 STATE_FILE = os.environ.get("STATE_FILE", "/state/state.json")
 USER_AGENT = os.environ.get(
     "USER_AGENT", "osm-fulda-feeds/sentinel (+https://github.com/osm-fulda/osm-fulda-feeds)"
@@ -49,11 +53,24 @@ USER_AGENT = os.environ.get(
 log = logging.getLogger("sentinel")
 lock = threading.Lock()
 STARTED = datetime.now(timezone.utc)
-# open:  finding key -> ISO time of first sight. A key leaves "open" when the
-#        problem is fixed. If it comes back later, it is new again.
-# items: JSON Feed items, newest first
+# open:    finding key -> ISO time of first sight. A key leaves "open" when a
+#          mapper repairs the problem.
+# closed:  finding key -> ISO time when the key left "open" (see GRACE_DAYS)
+# items:   JSON Feed items, newest first
 # last_ok: ISO time of the last good run
-state: dict = {"open": {}, "items": [], "last_ok": None}
+# base:    data time (timestamp_osm_base) of the last good Overpass result
+state: dict = {"open": {}, "closed": {}, "items": [], "last_ok": None, "base": None}
+
+# This item is always in the feed. At subscribe time, maubot marks it as seen
+# and does not post it. Because the feed is never empty, the rss plugin does
+# not start its backoff (it counts an empty feed as an error).
+STATUS_ITEM = {
+    "id": "sentinel-status",
+    "url": "https://github.com/osm-fulda/osm-fulda-feeds#qualitätssicherung",
+    "title": "sentinel ist aktiv. Neue Auffälligkeiten erscheinen hier.",
+    "content_text": "Dieser Eintrag ist immer im Feed. Er ist kein Fund.",
+    "date_published": "2026-11-06T00:00:00+00:00",
+}
 
 # One query for all checks. Only ways with a sidewalk tag and a "separate"
 # side come back, so the result stays small (a few hundred ways at most).
@@ -65,7 +82,7 @@ way[highway][sidewalk](area.a)->.s;
   way.s["sidewalk:left"="separate"];
   way.s["sidewalk:right"="separate"];
 );
-out tags meta;
+out meta;
 """
 
 SIDES = {"both": {"left", "right"}, "yes": {"left", "right"}, "left": {"left"}, "right": {"right"}}
@@ -92,7 +109,8 @@ def check_sidewalk_twice(way: dict) -> str | None:
 CHECKS = [("gehweg-doppelt", "Gehweg doppelt", check_sidewalk_twice)]
 
 
-def overpass(query: str) -> dict:
+def overpass(query: str, min_base: str | None = None) -> dict:
+    """Return the first good answer. Skip servers with older data than min_base."""
     body = urllib.parse.urlencode({"data": query}).encode()
     errors = []
     for url in ENDPOINTS:
@@ -100,12 +118,18 @@ def overpass(query: str) -> dict:
         try:
             with urllib.request.urlopen(req, timeout=180) as resp:
                 data = json.load(resp)
-        except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        # OSError includes URLError, timeouts and dropped connections.
+        except (OSError, http.client.HTTPException, ValueError) as e:
             errors.append(f"{url}: {e}")
             continue
         # Overpass sends HTTP 200 with a "remark" when the query fails.
         if "error" in data.get("remark", ""):
             errors.append(f"{url}: {data['remark']}")
+            continue
+        base = data.get("osm3s", {}).get("timestamp_osm_base")
+        # A server with old data can show a repaired problem again.
+        if min_base and base and base < min_base:
+            errors.append(f"{url}: data from {base} is older than {min_base}")
             continue
         return data
     raise RuntimeError("; ".join(errors))
@@ -133,7 +157,7 @@ def make_item(key: str, f: dict, now: datetime) -> dict:
     where = f"„{f['name']}“" if f["name"] else f"Weg {f['way']}"
     way_url = f"https://www.openstreetmap.org/way/{f['way']}"
     return {
-        # The time in the id makes a problem that comes back a new entry.
+        # The time in the id gives a problem that appears again a new entry.
         "id": f"{key}@{now.strftime('%Y-%m-%dT%H:%M')}",
         "url": way_url,
         "title": f"{f['label']}: {where} – {f['text']} (zuletzt bearbeitet von {f['user']})",
@@ -147,10 +171,18 @@ def make_item(key: str, f: dict, now: datetime) -> dict:
 
 def run() -> None:
     now = datetime.now(timezone.utc)
-    found = find(overpass(QUERY))
+    data = overpass(QUERY, state["base"])
+    found = find(data)
     with lock:
-        new = [k for k in found if k not in state["open"]]
+        grace = (now - timedelta(days=GRACE_DAYS)).isoformat()
+        closed = {k: t for k, t in state["closed"].items() if t >= grace}
+        new = [k for k in found if k not in state["open"] and k not in closed]
         fixed = [k for k in state["open"] if k not in found]
+        for k in fixed:
+            closed[k] = now.isoformat()
+        for k in found:
+            closed.pop(k, None)
+        state["closed"] = closed
         state["open"] = {k: state["open"].get(k, now.isoformat()) for k in found}
         items = [make_item(k, found[k], now) for k in new[:MAX_ITEMS_PER_RUN]]
         if len(new) > MAX_ITEMS_PER_RUN:
@@ -167,6 +199,7 @@ def run() -> None:
         cutoff = (now - timedelta(days=KEEP_DAYS)).isoformat()
         state["items"] = items + [i for i in state["items"] if i["date_published"] >= cutoff]
         state["last_ok"] = now.isoformat()
+        state["base"] = data.get("osm3s", {}).get("timestamp_osm_base") or state["base"]
         save()
     log.info("run done: %d open, %d new, %d fixed", len(found), len(new), len(fixed))
 
@@ -183,10 +216,12 @@ def next_run_after(t: datetime) -> datetime:
 def scheduler() -> None:
     now = datetime.now(timezone.utc)
     last = state["last_ok"]
-    # Missed a night: run at once. Else, and also on the very first start,
-    # wait for RUN_AT. So there is time to subscribe before the first run:
-    # maubot posts nothing for items that are in the feed at subscribe time.
-    if last and now - datetime.fromisoformat(last) > timedelta(days=1):
+    last_slot = next_run_after(now) - timedelta(days=1)
+    # No good run since the last RUN_AT: run at once. Else, and also on the
+    # very first start, wait for RUN_AT. So there is time to subscribe before
+    # the first run: maubot posts nothing for items that are in the feed at
+    # subscribe time.
+    if last and datetime.fromisoformat(last) < last_slot:
         due = now
     else:
         due = next_run_after(now)
@@ -200,7 +235,7 @@ def scheduler() -> None:
             due = next_run_after(datetime.now(timezone.utc))
             continue
         except RuntimeError as e:
-            # All Overpass servers busy or down. This is normal, no traceback.
+            # No Overpass server gave a good answer. This is normal, no traceback.
             log.warning("overpass failed, retry in %d minutes: %s", RETRY_MINUTES, e)
         except Exception:  # noqa: BLE001 -- retry later, keep the thread alive
             log.exception("run failed, retry in %d minutes", RETRY_MINUTES)
@@ -214,12 +249,19 @@ def load() -> None:
         log.info("loaded state: %d open findings", len(state["open"]))
     except FileNotFoundError:
         pass
+    except ValueError:
+        # A broken file must not stop the container. Keep it for analysis and
+        # start with an empty state. The next run reports all findings again.
+        os.replace(STATE_FILE, STATE_FILE + ".broken")
+        log.warning("state file is broken, moved to %s.broken", STATE_FILE)
 
 
 def save() -> None:
     tmp = STATE_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, STATE_FILE)
 
 
@@ -231,15 +273,16 @@ class Handler(BaseHTTPRequestHandler):
                     "version": "https://jsonfeed.org/version/1.1",
                     "title": FEED_TITLE,
                     "home_page_url": "https://wiki.openstreetmap.org/wiki/Fulda",
-                    "items": state["items"],
+                    "items": state["items"] + [STATUS_ITEM],
                 }
             body = json.dumps(feed, ensure_ascii=False).encode()
             ctype, status = "application/feed+json", 200
         elif self.path == "/health":
             now = datetime.now(timezone.utc)
             last = state["last_ok"]
-            # Two nights without a good run: Overpass is down for long, or we are broken.
-            # Before the first run: ok while the first night is still to come.
+            # Two nights without a good run: Overpass is down for a long time,
+            # or the script has a problem. Before the first run: ok until the
+            # first night is over.
             if last:
                 ok = now - datetime.fromisoformat(last) < timedelta(hours=50)
             else:
