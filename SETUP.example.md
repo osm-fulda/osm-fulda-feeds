@@ -35,6 +35,7 @@ sechs Monaten Pause als Erstes wissen will.
 | | `!RAUM_ID:HOMESERVER` | Notes (osm.org) |
 | | `!RAUM_ID` | Neueröffnungen (bald-in.de, Spüre Fulda, neueroeffnung.info über `nf-filter`) |
 | | `!RAUM_ID` | Erste Changesets neuer Mapper (neis-one.org) |
+| | `!RAUM_ID` | Auffälligkeiten (`sentinel`) |
 
 Bounding Box: `MIN_LON,MIN_LAT,MAX_LON,MAX_LAT`
 Entspricht Relation [rXXXXX](https://www.openstreetmap.org/relation/XXXXX).

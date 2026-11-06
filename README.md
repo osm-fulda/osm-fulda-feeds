@@ -286,6 +286,7 @@ Beobachtete Werte, kein Richtwert für anderswo:
 | Neueröffnungen (bald-in.de) | 43 Einträge | ~0,6 pro Tag | 43 ÷ 0,6 ≈ **10 Wochen** |
 | Neueröffnungen (Spüre Fulda) | 3 Beiträge | wenige pro Jahr | alle seit 12/2025, **> 10 Monate** |
 | Neueröffnungen (neueroeffnung.info, über `nf-filter`) | alle Treffer der letzten 14 Tage | wenige pro Woche | **14 Tage** (`KEEP_DAYS`) |
+| Auffälligkeiten (über `sentinel`) | alle neuen Funde der letzten 30 Tage | einzelne pro Monat (geschätzt) | **30 Tage** (`KEEP_DAYS`) |
 | Erste Changesets neuer Mapper (neis-one.org) | alle der letzten 7 Tage | ~0,4 pro Tag | **7 Tage** |
 
 Die beiden Neueröffnungs-Feeds sind bereits auf Fulda gefiltert (`?stadt=fulda`
@@ -401,6 +402,75 @@ Logs und Zustand:
 
 `/health` meldet `stale` (HTTP 503), wenn drei Abrufe nacheinander fehlschlagen.
 
+## Qualitätssicherung
+
+`sentinel` ist ein dritter Container im selben Compose (Python, nur stdlib,
+`sentinel/sentinel.py`). Er prüft OSM-Daten im Landkreis und meldet **neue**
+Fehler als JSON Feed unter `http://sentinel:8080/feed.json`.
+
+Ablauf:
+
+1. Einmal pro Nacht (`RUN_AT`, Standard 04:15) stellt er eine einzige
+   Overpass-Abfrage für den Landkreis (Relation 62700).
+2. Er wendet die Prüfungen auf das Ergebnis an und vergleicht die Funde mit dem
+   letzten Lauf.
+3. Nur Funde, die beim letzten Lauf nicht da waren, kommen in den Feed. Ein
+   behobener Fehler, der später wieder auftaucht, ist wieder neu. Ausnahme:
+   Taucht er innerhalb von 7 Tagen wieder auf (`GRACE_DAYS`), meldet `sentinel`
+   ihn nicht noch einmal. Das verhindert doppelte Meldungen nach einer falschen
+   oder veralteten Antwort eines Overpass-Servers.
+4. Schlägt die Abfrage fehl, versucht er es alle 30 Minuten erneut
+   (`RETRY_MINUTES`). Die Overpass-Server sind oft überlastet. Ein verpasster Tag
+   kostet nichts, weil jeder Lauf den aktuellen Zustand prüft. Eine Antwort mit
+   älteren Daten als beim letzten Lauf verwirft er.
+
+Ein fester Eintrag „sentinel ist aktiv“ steht immer im Feed. Beim Abonnieren
+speichert maubot ihn still als „gesehen“. Er sorgt dafür, dass der Feed nie leer
+ist, siehe [Betrieb](#betrieb).
+
+Mehr als 20 neue Funde in einem Lauf (`MAX_ITEMS_PER_RUN`) meldet er nicht
+einzeln, sondern als eine Sammelmeldung. Das schützt den Raum nach einer großen
+Bearbeitung.
+
+Beim ersten Lauf ist jeder bestehende Fehler neu. Wähle deshalb nur Prüfungen,
+die heute schon fast sauber sind.
+
+Auch nach dem ersten Start wartet der Dienst bis `RUN_AT`. Bis dahin ist der
+Feed leer, und du kannst in Ruhe abonnieren. maubot speichert Einträge, die
+beim Abonnieren schon im Feed stehen, still als „gesehen“. Die Funde des ersten
+Laufs kommen so als echte Meldungen im Raum an. Nur wenn der letzte gute Lauf
+älter als ein Tag ist, läuft er sofort.
+
+### Prüfungen
+
+| ID | Was | Warum | Stand 2026-11-06 |
+|----|-----|-------|------------------|
+| `gehweg-doppelt` | Straße mit `sidewalk=both/yes/left/right` auf einer Seite, die auch `sidewalk:<Seite>=separate` hat | Router sehen den Gehweg zweimal. Typische Ursache: StreetComplete oder iD fragt „Gibt es hier einen Gehweg?“ | 7 Funde |
+
+`sidewalk=left` + `sidewalk:right=separate` ist gültig (links an der Straße
+erfasst, rechts als eigener Weg) und wird nicht gemeldet.
+
+Eine neue Prüfung ist eine Funktion in `sentinel.py` plus ein Eintrag in
+`CHECKS`. Braucht sie andere Objekte, muss auch `QUERY` sie liefern.
+
+Abo im Raum `#osm-fulda-auffaelligkeiten`:
+
+    !rss subscribe http://sentinel:8080/feed.json
+
+Einmal prüfen, ohne Container und ohne Zustand:
+
+    python3 sentinel/sentinel.py --once
+
+Logs und Zustand:
+
+    docker compose logs -f sentinel
+    docker compose exec sentinel python -c \
+      "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/health').read())"
+
+`/health` meldet `stale` (HTTP 503), wenn es länger als 50 Stunden keinen guten
+Lauf gab, also zwei Nächte nacheinander. Vor dem ersten Lauf gilt: `ok` für 26
+Stunden nach dem Start.
+
 ## Betrieb
 
 Logs:
@@ -410,10 +480,20 @@ Logs:
 Anders als bei den gehosteten Bots siehst du Feed-Fehler hier direkt, statt sie
 am ausbleibenden Post zu erraten.
 
-Das rss-Plugin macht bei fehlschlagenden Feeds ein exponentielles Backoff bis zu
-`max_backoff` (Standard 7200 Minuten = 5 Tage). Ein Feed, der länger weg war,
+Das rss-Plugin macht bei fehlschlagenden Feeds ein Backoff bis zu
+`max_backoff` (Standard 7200 Minuten = 5 Tage). Die Pause wächst linear: nach
+dem n-ten Fehler `update_interval` × n Minuten. Ein Feed, der länger weg war,
 kommt also nicht sofort nach der Reparatur zurück — Instanz neu starten, wenn es
 schneller gehen soll.
+
+Auch ein **leerer** Feed zählt für das Plugin als Fehler (`rss/bot.py`,
+`if not entries:`). `nf-filter` ist oft leer, sein Fehlerzähler in `rss.db`
+steigt deshalb, ohne dass etwas kaputt ist. Folge: Der erste neue Eintrag nach
+einer langen leeren Phase kommt später an. Mit `update_interval: 5` sind das
+nach zwei leeren Wochen rund 7,5 Stunden, mit dem Standardwert 60 deutlich mehr.
+Verloren geht nichts, solange `max_backoff` kürzer ist als die Haltezeit des
+Feeds (`KEEP_DAYS`). `sentinel` hat dieses Problem nicht, weil sein
+Status-Eintrag den Feed nie leer lässt.
 
 Faustregel zur Kontrolle: Ein ganzer stiller Tag im Changeset-Raum heißt, dass
 etwas kaputt ist — und zugleich, dass das Fenster des WHODIDIT-Feeds gerade

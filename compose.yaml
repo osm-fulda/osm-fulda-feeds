@@ -36,5 +36,22 @@ services:
       interval: 5m
       start_period: 10m
 
+  # QA checks with one nightly Overpass query, see README "Qualitätssicherung".
+  # No published port: maubot reaches it as http://sentinel:8080/feed.json.
+  sentinel:
+    image: python:3.13-slim
+    restart: unless-stopped
+    command: ["python", "-u", "/app/sentinel.py"]
+    environment:
+      RUN_AT: "04:15"
+    volumes:
+      - ./sentinel/sentinel.py:/app/sentinel.py:ro
+      - sentinel-state:/state
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 1h
+      start_period: 2h
+
 volumes:
   nf-cache:
+  sentinel-state:
