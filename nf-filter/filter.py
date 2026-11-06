@@ -160,10 +160,24 @@ def poller() -> None:
         time.sleep(POLL_SECONDS)
 
 
+def feed_date(iso: str) -> str:
+    """Return the time as UTC without a zone, for example 2026-11-06T22:21:48.
+
+    The maubot rss plugin stores date_published in SQLite. A value with a zone
+    ("+00:00") breaks the read of the stored entries, and then the plugin
+    stops to poll all feeds. So the feed must not contain a zone.
+    """
+    dt = datetime.fromisoformat(iso)
+    if dt.tzinfo:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.isoformat(timespec="seconds")
+
+
 def build_feed() -> dict:
     with lock:
         items = [v["item"] for v in cache.values() if v["match"]]
     items.sort(key=lambda i: i["date_published"], reverse=True)
+    items = [{**i, "date_published": feed_date(i["date_published"])} for i in items]
     return {
         "version": "https://jsonfeed.org/version/1.1",
         "title": FEED_TITLE,

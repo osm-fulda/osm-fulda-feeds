@@ -46,8 +46,6 @@ services:
       # One test run at another time: SENTINEL_RUN_AT=21:30 docker compose up -d sentinel
       # Then "docker compose up -d sentinel" again to go back to 04:15.
       RUN_AT: "${SENTINEL_RUN_AT:-04:15}"
-      # First run with 5 checks: about 50 findings. Set back to 20 after it.
-      MAX_ITEMS_PER_RUN: "60"
     volumes:
       - ./sentinel/sentinel.py:/app/sentinel.py:ro
       - sentinel-state:/state

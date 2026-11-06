@@ -266,6 +266,19 @@ def run() -> None:
     log.info("run done: %d open, %d new, %d fixed", len(found), len(new), len(fixed))
 
 
+def feed_date(iso: str) -> str:
+    """Return the time as UTC without a zone, for example 2026-11-06T22:21:48.
+
+    The maubot rss plugin stores date_published in SQLite. A value with a zone
+    ("+00:00") breaks the read of the stored entries, and then the plugin
+    stops to poll all feeds. So the feed must not contain a zone.
+    """
+    dt = datetime.fromisoformat(iso)
+    if dt.tzinfo:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.isoformat(timespec="seconds")
+
+
 def next_run_after(t: datetime) -> datetime:
     hh, mm = map(int, RUN_AT.split(":"))
     local = t.astimezone(TZ)
@@ -335,7 +348,10 @@ class Handler(BaseHTTPRequestHandler):
                     "version": "https://jsonfeed.org/version/1.1",
                     "title": FEED_TITLE,
                     "home_page_url": "https://wiki.openstreetmap.org/wiki/Fulda",
-                    "items": state["items"] + [STATUS_ITEM],
+                    "items": [
+                        {**i, "date_published": feed_date(i["date_published"])}
+                        for i in state["items"] + [STATUS_ITEM]
+                    ],
                 }
             body = json.dumps(feed, ensure_ascii=False).encode()
             ctype, status = "application/feed+json", 200
