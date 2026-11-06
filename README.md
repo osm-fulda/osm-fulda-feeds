@@ -461,6 +461,12 @@ Abo im Raum `#osm-fulda-auffaelligkeiten`:
 
     !rss subscribe http://sentinel:8080/feed.json
 
+Einmal zu einer anderen Zeit laufen lassen, z. B. zum Testen (Ortszeit):
+
+    SENTINEL_RUN_AT=21:30 docker compose up -d sentinel
+    # nach dem Lauf zurück auf 04:15:
+    docker compose up -d sentinel
+
 Einmal prüfen, ohne Container und ohne Zustand:
 
     python3 sentinel/sentinel.py --once
