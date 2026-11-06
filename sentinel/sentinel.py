@@ -146,10 +146,21 @@ def check_type_missing(el: dict) -> str | None:
     return " und ".join(f"{k}=yes" for k in found) + ": Typ nicht gewählt" if found else None
 
 
+def is_transit_stop(tags: dict) -> bool:
+    """Stops often have names like "Kirche" or "Sportplatz". These are real names."""
+    return (
+        "public_transport" in tags
+        or tags.get("highway") == "bus_stop"
+        or tags.get("amenity") == "bus_station"
+        or tags.get("railway") in ("halt", "station", "stop", "tram_stop")
+    )
+
+
 def check_generic_name(el: dict) -> str | None:
     """The name only tells the type, for example name=Spielplatz."""
-    name = el.get("tags", {}).get("name", "")
-    if name.lower() not in GENERIC_NAMES:
+    tags = el.get("tags", {})
+    name = tags.get("name", "")
+    if name.lower() not in GENERIC_NAMES or is_transit_stop(tags):
         return None
     return f"name={name} beschreibt nur den Typ"
 
