@@ -286,6 +286,7 @@ Beobachtete Werte, kein Richtwert für anderswo:
 | Neueröffnungen (bald-in.de) | 43 Einträge | ~0,6 pro Tag | 43 ÷ 0,6 ≈ **10 Wochen** |
 | Neueröffnungen (Spüre Fulda) | 3 Beiträge | wenige pro Jahr | alle seit 12/2025, **> 10 Monate** |
 | Neueröffnungen (neueroeffnung.info, über `nf-filter`) | alle Treffer der letzten 14 Tage | wenige pro Woche | **14 Tage** (`KEEP_DAYS`) |
+| Erste Changesets neuer Mapper (neis-one.org) | alle der letzten 7 Tage | ~0,4 pro Tag | **7 Tage** |
 
 Die beiden Neueröffnungs-Feeds sind bereits auf Fulda gefiltert (`?stadt=fulda`
 bzw. Kategorie-Feed). Stand Oktober 2026; es sind Sammel- bzw. Ankündigungs-
@@ -295,6 +296,18 @@ seiten, keine Quelle zum Übernehmen nach OSM — nur Hinweise fürs Mapping.
 und lässt sich serverseitig nicht filtern. Der Bot abonniert ihn deshalb nicht
 direkt, sondern über den Filter-Proxy `nf-filter`, siehe
 [Filter für neueroeffnung.info](#filter-für-neueroeffnunginfo).
+
+Der Feed „Latest OpenStreetMap Contributors“ von Pascal Neis meldet jede Person
+einmal, nämlich mit ihrem ersten Changeset überhaupt, wenn es im Gebiet liegt.
+Wir nutzen ihn, um neue Mapper zu begrüßen. Das Gebiet ist ein Quadrat von
+± `deg` Grad um `lon`/`lat`, kein Rechteck:
+
+    https://resultmaps.neis-one.org/newestosmfeed.php?lon=9.755&lat=50.58&deg=0.33
+
+West–Ost passt zur Bounding Box des Landkreises. Nach Norden und Süden ragt das
+Quadrat etwa 11 km darüber hinaus (Bad Hersfeld, Schlüchtern, Steinau). Die
+Zeile „First active near“ im Eintrag zeigt, wo die Person angefangen hat.
+Personen, deren erstes Changeset außerhalb lag, meldet der Feed nicht.
 
 Die Changesets sind also der enge Fall: Der Bot darf keinen ganzen Tag stehen.
 Bei den Notes wären fünf Wochen Ausfall verkraftbar.
