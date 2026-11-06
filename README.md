@@ -449,7 +449,7 @@ Laufs kommen so als echte Meldungen im Raum an. Nur wenn der letzte gute Lauf
 | `gehweg-ohne-highway` | `footway=sidewalk` an einem Weg, der nicht `highway=footway/path` ist | Der Gehweg fehlt im Fußwegenetz oder hat die falsche Art. | 0 Funde |
 | `fahrradstrasse` | `bicycle_road=yes` ohne `bicycle=designated` | Router behandeln die Fahrradstraße wie eine normale Straße. | 6 Funde |
 | `typ-fehlt` | `shop=yes` oder `amenity=yes` | Typ nicht gewählt. Typisch für iD, wenn keine Vorlage passt. | 8 Funde |
-| `name-ist-typ` | `name` ist nur ein Typwort, z. B. `Spielplatz`, `Kirche`, `Grillhütte` (Liste `GENERIC_NAMES`) | Das ist eine Beschreibung, kein Name. Karten zeigen den Typ ohnehin an. | 28 Funde |
+| `name-ist-typ` | `name` ist nur ein Typwort, z. B. `Spielplatz`, `Kirche`, `Grillhütte` (Liste `GENERIC_NAMES`) | Das ist eine Beschreibung, kein Name. Karten zeigen den Typ ohnehin an. Haltestellen (`public_transport=*`, `highway=bus_stop`, `railway=halt/station/stop/tram_stop`, `amenity=bus_station`) sind ausgenommen: „Kirche“ oder „Sportplatz“ ist dort der echte Name. | 13 Funde |
 
 `sidewalk=left` + `sidewalk:right=separate` ist gültig (links an der Straße
 erfasst, rechts als eigener Weg) und wird nicht gemeldet.
