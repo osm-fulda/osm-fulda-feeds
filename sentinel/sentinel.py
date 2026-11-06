@@ -4,10 +4,8 @@ Once per night, one Overpass query gets the current state. The script
 compares the result with the previous run and serves only new findings as a
 JSON Feed for the maubot rss plugin.
 
-Check 1 (the only check at the moment): a road has sidewalk=both/yes/left/right
-on a side that also has sidewalk:<side>=separate. Then routers see the
-sidewalk two times. A typical cause is the StreetComplete or iD question
-"Is there a sidewalk here?".
+The checks are in CHECKS. Each check is a function that gets one OSM element
+from the query result and returns a short text if the element has a problem.
 
 The script uses only the standard library. Environment variables set the
 configuration, see README. Run "python sentinel.py --once" to print the
@@ -72,15 +70,29 @@ STATUS_ITEM = {
     "date_published": "2026-11-06T00:00:00+00:00",
 }
 
-# One query for all checks. Only ways with a sidewalk tag and a "separate"
-# side come back, so the result stays small (a few hundred ways at most).
-QUERY = f"""[out:json][timeout:120];
+# Names that only tell the type of the object. Compared without case.
+GENERIC_NAMES = {
+    "apotheke", "arztpraxis", "bäckerei", "bank", "bushaltestelle", "café",
+    "cafe", "friedhof", "friseur", "geldautomat", "grillhütte", "imbiss",
+    "kindergarten", "kiosk", "kirche", "metzgerei", "parkplatz", "restaurant",
+    "schule", "spielplatz", "sportplatz", "supermarkt", "tankstelle", "zahnarzt",
+}
+_NAME_RE = "|".join(sorted(GENERIC_NAMES))
+
+# One query for all checks. Each line returns only candidates for one check,
+# so the result stays small. The checks in Python make the final decision.
+QUERY = f"""[out:json][timeout:180];
 rel({AREA_RELATION});map_to_area->.a;
 way[highway][sidewalk](area.a)->.s;
 (
   way.s["sidewalk:both"="separate"];
   way.s["sidewalk:left"="separate"];
   way.s["sidewalk:right"="separate"];
+  way[footway=sidewalk][highway!~"^(footway|path|construction|proposed)$"](area.a);
+  way[bicycle_road=yes][bicycle!=designated](area.a);
+  nwr[shop=yes](area.a);
+  nwr[amenity=yes](area.a);
+  nwr[name~"^({_NAME_RE})$",i](area.a);
 );
 out meta;
 """
@@ -106,7 +118,51 @@ def check_sidewalk_twice(way: dict) -> str | None:
     return f"sidewalk={tags['sidewalk']} trotz {sep}"
 
 
-CHECKS = [("gehweg-doppelt", "Gehweg doppelt", check_sidewalk_twice)]
+def check_sidewalk_without_highway(el: dict) -> str | None:
+    """footway=sidewalk must be on a highway=footway (or path) way."""
+    tags = el.get("tags", {})
+    if el["type"] != "way" or tags.get("footway") != "sidewalk":
+        return None
+    hw = tags.get("highway")
+    if hw in ("footway", "path", "construction", "proposed"):
+        return None
+    return f"footway=sidewalk an highway={hw}" if hw else "footway=sidewalk ohne highway"
+
+
+def check_bicycle_road(el: dict) -> str | None:
+    """A Fahrradstraße (bicycle_road=yes) needs bicycle=designated."""
+    tags = el.get("tags", {})
+    if tags.get("bicycle_road") != "yes" or tags.get("bicycle") == "designated":
+        return None
+    return f"bicycle_road=yes, aber bicycle={tags['bicycle']}" if "bicycle" in tags else (
+        "bicycle_road=yes ohne bicycle=designated"
+    )
+
+
+def check_type_missing(el: dict) -> str | None:
+    """shop=yes or amenity=yes: the mapper did not select a type (typical in iD)."""
+    tags = el.get("tags", {})
+    found = [k for k in ("shop", "amenity") if tags.get(k) == "yes"]
+    return " und ".join(f"{k}=yes" for k in found) + ": Typ nicht gewählt" if found else None
+
+
+def check_generic_name(el: dict) -> str | None:
+    """The name only tells the type, for example name=Spielplatz."""
+    name = el.get("tags", {}).get("name", "")
+    if name.lower() not in GENERIC_NAMES:
+        return None
+    return f"name={name} beschreibt nur den Typ"
+
+
+# (id, label in the message, function)
+CHECKS = [
+    ("gehweg-doppelt", "Gehweg doppelt", check_sidewalk_twice),
+    ("gehweg-ohne-highway", "Gehweg falsch getaggt", check_sidewalk_without_highway),
+    ("fahrradstrasse", "Fahrradstraße unvollständig", check_bicycle_road),
+    ("typ-fehlt", "Typ fehlt", check_type_missing),
+    ("name-ist-typ", "Name ist nur der Typ", check_generic_name),
+]
+TYPE_DE = {"node": "Knoten", "way": "Weg", "relation": "Relation"}
 
 
 def overpass(query: str, min_base: str | None = None) -> dict:
@@ -138,31 +194,37 @@ def overpass(query: str, min_base: str | None = None) -> dict:
 def find(data: dict) -> dict[str, dict]:
     """Return finding key -> details for all current problems."""
     found = {}
-    for way in data["elements"]:
+    for el in data["elements"]:
         for check_id, label, fn in CHECKS:
-            text = fn(way)
+            text = fn(el)
             if text:
-                found[f"{check_id}:way/{way['id']}"] = {
+                found[f"{check_id}:{el['type']}/{el['id']}"] = {
                     "label": label,
                     "text": text,
-                    "way": way["id"],
-                    "name": way["tags"].get("name") or way["tags"].get("ref") or "",
-                    "user": way.get("user", "?"),
-                    "changeset": way.get("changeset"),
+                    "type": el["type"],
+                    "id": el["id"],
+                    "name": el.get("tags", {}).get("name") or el.get("tags", {}).get("ref") or "",
+                    "user": el.get("user", "?"),
+                    "changeset": el.get("changeset"),
                 }
     return found
 
 
 def make_item(key: str, f: dict, now: datetime) -> dict:
-    where = f"„{f['name']}“" if f["name"] else f"Weg {f['way']}"
-    way_url = f"https://www.openstreetmap.org/way/{f['way']}"
+    kind = TYPE_DE.get(f["type"], f["type"])
+    # A generic name says nothing about the place, so show the id instead.
+    if f["name"] and f["name"].lower() not in GENERIC_NAMES:
+        where = f"„{f['name']}“"
+    else:
+        where = f"{kind} {f['id']}"
+    url = f"https://www.openstreetmap.org/{f['type']}/{f['id']}"
     return {
         # The time in the id gives a problem that appears again a new entry.
         "id": f"{key}@{now.strftime('%Y-%m-%dT%H:%M')}",
-        "url": way_url,
+        "url": url,
         "title": f"{f['label']}: {where} – {f['text']} (zuletzt bearbeitet von {f['user']})",
         "content_text": (
-            f"{f['text']}\n\nWeg: {way_url}\n"
+            f"{f['text']}\n\n{kind}: {url}\n"
             f"Letztes Changeset: https://www.openstreetmap.org/changeset/{f['changeset']}"
         ),
         "date_published": now.isoformat(),
