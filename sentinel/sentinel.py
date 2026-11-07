@@ -90,8 +90,6 @@ way[highway][sidewalk](area.a)->.s;
   way.s["sidewalk:right"="separate"];
   way[footway=sidewalk][highway!~"^(footway|path|construction|proposed)$"](area.a);
   way[bicycle_road=yes][bicycle!=designated](area.a);
-  nwr[shop=yes](area.a);
-  nwr[amenity=yes](area.a);
   nwr[name~"^({_NAME_RE})$",i](area.a);
 );
 out meta;
@@ -139,13 +137,6 @@ def check_bicycle_road(el: dict) -> str | None:
     )
 
 
-def check_type_missing(el: dict) -> str | None:
-    """shop=yes or amenity=yes: the mapper did not select a type (typical in iD)."""
-    tags = el.get("tags", {})
-    found = [k for k in ("shop", "amenity") if tags.get(k) == "yes"]
-    return " und ".join(f"{k}=yes" for k in found) + ": Typ nicht gewählt" if found else None
-
-
 def is_transit_stop(tags: dict) -> bool:
     """Stops often have names like "Kirche" or "Sportplatz". These are real names."""
     return (
@@ -170,7 +161,6 @@ CHECKS = [
     ("gehweg-doppelt", "Gehweg doppelt", check_sidewalk_twice),
     ("gehweg-ohne-highway", "Gehweg falsch getaggt", check_sidewalk_without_highway),
     ("fahrradstrasse", "Fahrradstraße unvollständig", check_bicycle_road),
-    ("typ-fehlt", "Typ fehlt", check_type_missing),
     ("name-ist-typ", "Name ist nur der Typ", check_generic_name),
 ]
 TYPE_DE = {"node": "Knoten", "way": "Weg", "relation": "Relation"}
