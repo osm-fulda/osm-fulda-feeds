@@ -467,6 +467,17 @@ Einmal zu einer anderen Zeit laufen lassen, z. B. zum Testen (Ortszeit):
     # nach dem Lauf zurück auf 04:15:
     docker compose up -d sentinel
 
+Tests (ohne Netz, nur stdlib). GitHub Actions führt sie bei jedem Push und
+jedem Pull Request aus (`.github/workflows/test.yml`):
+
+    python3 -m unittest discover -s sentinel -v
+
+Sie prüfen jede Regel mit Beispielen, den Ablauf über mehrere Läufe (neu,
+gleich, behoben, Schonfrist, Limit), den Fallback auf den nächsten
+Overpass-Server und das Datumsformat im Feed. Ein Datum mit Zeitzone hat am
+2026-11-06 alle Feeds von maubot lahmgelegt (#11). Eine neue Prüfung braucht
+neue Testfälle in `sentinel/test_sentinel.py`.
+
 Einmal prüfen, ohne Container und ohne Zustand:
 
     python3 sentinel/sentinel.py --once
