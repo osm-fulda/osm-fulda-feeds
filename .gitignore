@@ -17,3 +17,6 @@ SETUP.local.md
 *~
 *.swp
 .DS_Store
+
+# Python
+__pycache__/
