@@ -16,6 +16,7 @@ import http.client
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -90,6 +91,7 @@ way[highway][sidewalk](area.a)->.s;
   way.s["sidewalk:right"="separate"];
   way[footway=sidewalk][highway!~"^(footway|path|construction|proposed)$"](area.a);
   way[bicycle_road=yes][bicycle!=designated](area.a);
+  way[traffic_sign~"DE:(237|239|242|244|254|260)"](area.a);
   nwr[name~"^({_NAME_RE})$",i](area.a);
 );
 out meta;
@@ -156,12 +158,60 @@ def check_generic_name(el: dict) -> str | None:
     return f"name={name} beschreibt nur den Typ"
 
 
+_SIGN_RE = re.compile(r"\d{3,4}(?:[.-]\d+)*")
+BIKE_ALLOWED = ("yes", "designated", "permissive")
+
+
+def sign_numbers(value: str) -> set[str]:
+    """'DE:239,1022-10' -> {'239', '1022-10'}. Works with ',' and ';'.
+
+    Values in brackets are parameters, not signs: 1004-30[400] means "in 400 m".
+    """
+    value = re.sub(r"\[[^\]]*\]", "", value)
+    return set(_SIGN_RE.findall(value.replace("DE:", "")))
+
+
+def check_sign_conflict(el: dict) -> str | None:
+    """The tags allow what the German traffic sign on the way forbids (or the reverse).
+
+    Only signs in traffic_sign on the way itself. End signs (242.2, 244.2)
+    do not count.
+    """
+    tags = el.get("tags", {})
+    if el["type"] != "way" or "traffic_sign" not in tags:
+        return None
+    sg = sign_numbers(tags["traffic_sign"])
+    bike = tags.get("bicycle")
+    bike_free = "1022-10" in sg  # Zusatzzeichen "Radfahrer frei"
+    problems = []
+    if "239" in sg and not bike_free and bike in BIKE_ALLOWED:
+        problems.append(f"Gehweg (Z. 239) ohne „Radfahrer frei“, aber bicycle={bike}")
+    if "254" in sg and bike in BIKE_ALLOWED:
+        problems.append(f"Verbot für Radverkehr (Z. 254), aber bicycle={bike}")
+    if "237" in sg and bike != "designated":
+        problems.append(f"Radweg (Z. 237), aber bicycle={bike or 'fehlt'}")
+    if "237" in sg and tags.get("foot") == "designated":
+        problems.append("Radweg (Z. 237), aber foot=designated")
+    if sg & {"242", "242.1"}:
+        if tags.get("highway") != "pedestrian":
+            problems.append(f"Fußgängerzone (Z. 242.1), aber highway={tags.get('highway')}")
+        if not bike_free and bike in BIKE_ALLOWED:
+            problems.append(f"Fußgängerzone (Z. 242.1) ohne „Radfahrer frei“, aber bicycle={bike}")
+    if sg & {"244", "244.1"} and tags.get("bicycle_road") != "yes":
+        problems.append("Fahrradstraße (Z. 244.1), aber bicycle_road fehlt")
+    # Only without any Zusatzzeichen: "260,1020-30" (Anlieger frei) can allow some.
+    if sg == {"260"} and tags.get("motor_vehicle") in ("yes", "designated"):
+        problems.append(f"Verbot für Kfz (Z. 260), aber motor_vehicle={tags['motor_vehicle']}")
+    return "; ".join(problems) if problems else None
+
+
 # (id, label in the message, function)
 CHECKS = [
     ("gehweg-doppelt", "Gehweg doppelt", check_sidewalk_twice),
     ("gehweg-ohne-highway", "Gehweg falsch getaggt", check_sidewalk_without_highway),
     ("fahrradstrasse", "Fahrradstraße unvollständig", check_bicycle_road),
     ("name-ist-typ", "Name ist nur der Typ", check_generic_name),
+    ("schild-widerspruch", "Schild widerspricht Tags", check_sign_conflict),
 ]
 TYPE_DE = {"node": "Knoten", "way": "Weg", "relation": "Relation"}
 

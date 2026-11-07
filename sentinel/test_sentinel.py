@@ -75,6 +75,54 @@ class Rules(unittest.TestCase):
         self.assertFalse(self.hit(f, el("node", name="Kirche", railway="halt")))
 
 
+class SignConflict(unittest.TestCase):
+    def hit(self, **tags):
+        return s.check_sign_conflict(el("way", **tags)) is not None
+
+    def test_sign_numbers(self):
+        self.assertEqual(s.sign_numbers("DE:239,1022-10"), {"239", "1022-10"})
+        self.assertEqual(s.sign_numbers("DE:240;DE:1022-10"), {"240", "1022-10"})
+        self.assertEqual(s.sign_numbers("DE:260,1026-32,1004-30[400]"), {"260", "1026-32", "1004-30"})
+
+    def test_gehweg(self):
+        self.assertTrue(self.hit(traffic_sign="DE:239", bicycle="yes"))
+        self.assertTrue(self.hit(traffic_sign="DE:239", bicycle="permissive"))
+        self.assertFalse(self.hit(traffic_sign="DE:239", bicycle="no"))
+        self.assertFalse(self.hit(traffic_sign="DE:239"))
+        self.assertFalse(self.hit(traffic_sign="DE:239,1022-10", bicycle="yes"))
+
+    def test_radverbot(self):
+        self.assertTrue(self.hit(traffic_sign="DE:254", bicycle="yes"))
+        self.assertFalse(self.hit(traffic_sign="DE:254", bicycle="no"))
+
+    def test_radweg(self):
+        self.assertFalse(self.hit(traffic_sign="DE:237", bicycle="designated"))
+        self.assertTrue(self.hit(traffic_sign="DE:237"))
+        self.assertTrue(self.hit(traffic_sign="DE:237", bicycle="designated", foot="designated"))
+
+    def test_fussgaengerzone(self):
+        self.assertFalse(self.hit(traffic_sign="DE:242.1", highway="pedestrian"))
+        self.assertTrue(self.hit(traffic_sign="DE:242.1", highway="footway"))
+        self.assertTrue(self.hit(traffic_sign="DE:242.1", highway="pedestrian", bicycle="yes"))
+        self.assertFalse(self.hit(traffic_sign="DE:242.1,1022-10", highway="pedestrian", bicycle="yes"))
+        # End sign: no rule.
+        self.assertFalse(self.hit(traffic_sign="DE:242.2", highway="residential"))
+
+    def test_fahrradstrasse_schild(self):
+        self.assertTrue(self.hit(traffic_sign="DE:244.1", highway="residential"))
+        self.assertFalse(self.hit(traffic_sign="DE:244.1", bicycle_road="yes"))
+        self.assertFalse(self.hit(traffic_sign="DE:244.2", highway="residential"))
+
+    def test_kfz_verbot(self):
+        self.assertTrue(self.hit(traffic_sign="DE:260", motor_vehicle="yes"))
+        self.assertFalse(self.hit(traffic_sign="DE:260,1020-30", motor_vehicle="yes"))
+        self.assertFalse(self.hit(traffic_sign="DE:260", motor_vehicle="no"))
+
+    def test_node_and_no_sign(self):
+        self.assertIsNone(s.check_sign_conflict(el("node", traffic_sign="DE:239", bicycle="yes")))
+        self.assertIsNone(s.check_sign_conflict(el("way", bicycle="yes")))
+
+
 class Runs(unittest.TestCase):
     def setUp(self):
         s.state.clear()
