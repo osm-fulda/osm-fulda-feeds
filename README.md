@@ -448,8 +448,12 @@ Laufs kommen so als echte Meldungen im Raum an. Nur wenn der letzte gute Lauf
 | `gehweg-doppelt` | Straße mit `sidewalk=both/yes/left/right` auf einer Seite, die auch `sidewalk:<Seite>=separate` hat | Router sehen den Gehweg zweimal. Typische Ursache: Beim Umstieg auf separate Gehwege bleibt das alte `sidewalk=both` stehen. | 7 Funde |
 | `gehweg-ohne-highway` | `footway=sidewalk` an einem Weg, der nicht `highway=footway/path` ist | Der Gehweg fehlt im Fußwegenetz oder hat die falsche Art. | 0 Funde |
 | `fahrradstrasse` | `bicycle_road=yes` ohne `bicycle=designated` | Router behandeln die Fahrradstraße wie eine normale Straße. | 6 Funde |
-| `typ-fehlt` | `shop=yes` oder `amenity=yes` | Typ nicht gewählt. Typisch für iD, wenn keine Vorlage passt. | 8 Funde |
 | `name-ist-typ` | `name` ist nur ein Typwort, z. B. `Spielplatz`, `Kirche`, `Grillhütte` (Liste `GENERIC_NAMES`) | Das ist eine Beschreibung, kein Name. Karten zeigen den Typ ohnehin an. Haltestellen (`public_transport=*`, `highway=bus_stop`, `railway=halt/station/stop/tram_stop`, `amenity=bus_station`) sind ausgenommen: „Kirche“ oder „Sportplatz“ ist dort der echte Name. | 13 Funde |
+
+Bewusst **keine** Prüfung ist `shop=yes`: Der Wert ist im Wiki als Notlösung
+für „Laden, Art unbekannt“ dokumentiert, also ungenau, aber nicht falsch. Er
+schadet kaum und gehört nicht zu den Themen, die wir überwachen (Gehwege,
+Querungen, Radwege).
 
 `sidewalk=left` + `sidewalk:right=separate` ist gültig (links an der Straße
 erfasst, rechts als eigener Weg) und wird nicht gemeldet.
