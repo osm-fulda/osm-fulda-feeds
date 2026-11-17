@@ -497,6 +497,59 @@ Logs und Zustand:
 Lauf gab, also zwei Nächte nacheinander. Vor dem ersten Lauf gilt: `ok` für 26
 Stunden nach dem Start.
 
+## Erinnerungen
+
+Viele Meldungen brauchen erst später eine Reaktion: Eine Neueröffnung, die
+Monate vorher angekündigt wird. Ein Hinweis, bei dem man in zwei Wochen
+nachsieht, ob er erledigt ist. Dafür läuft auf demselben Bot-Account
+eine zweite Instanz mit dem Plugin
+[reminder](https://github.com/maubot/reminder). Sie funktioniert in allen
+Räumen des Bots. Kein zweiter Container, kein zweiter Client.
+
+Einrichtung in der Web-UI:
+
+1. `xyz.maubot.reminder-v0.2.2.mbp` von
+   <https://github.com/maubot/reminder/releases> holen, unter *Plugins*
+   hochladen.
+2. *Instances* → neu: ID `reminder`, Type `xyz.maubot.reminder`, Primary user
+   der Client aus Schritt 5.
+3. In der Instanz-Config die Zeitzone setzen, sonst gilt UTC:
+
+       default_timezone: 'Europe/Berlin'
+
+Die Instanz reagiert in jedem Raum, in dem der Bot ist, und auf jede Person
+dort. Mit dem rss-Plugin gibt es keinen Konflikt: rss hört auf `!rss`,
+reminder auf `!remind`.
+
+Benutzung, als **Antwort** auf eine Meldung:
+
+    !remind locale de_de          # einmal pro Person, gilt in allen Räumen
+    !remind 01.05.2027 um 10:00 Eröffnung prüfen, in OSM eintragen
+
+Ohne `!remind locale de_de` versteht das Plugin nur `2027-05-01 10:00` und
+`in 6 months`. Ohne Uhrzeit kommt die Erinnerung zu der Uhrzeit, zu der sie
+angelegt wurde.
+
+Weitere Befehle: `!remind list` (dieser Raum), `!remind list all`,
+`!remind again <datum>` als Antwort auf eine fällige Erinnerung. Löschen: die
+eigene `!remind`-Nachricht entfernen. Wer auf die Bestätigung des Bots mit 👍
+reagiert, wird bei der Erinnerung ebenfalls erwähnt.
+
+Threads kennt das Plugin nicht. Es nimmt die Antwort-Kennung, die Element bei
+Thread-Nachrichten mitschickt, und die zeigt auf die **neueste** Nachricht im
+Thread. Im Thread funktioniert `!remind` deshalb nur als erste Nachricht.
+Die Erinnerung selbst erscheint immer in der Hauptzeitleiste, als Antwort auf
+die Meldung.
+
+Eine Erinnerung, die fällig wird, während maubot nicht läuft (Neustart,
+Update, Reboot), fällt still aus. Das Plugin schaut jede Minute nur nach
+Terminen in der nächsten Minute und holt nichts nach. Bewusst so gelassen:
+Ein Ausfall genau in dieser Minute ist selten.
+
+Die Erinnerungen liegen in `data/` und nirgends sonst. Geht `data/` verloren,
+sind sie weg, ohne dass es jemand merkt. Siehe
+[Was nicht im Repo steht](#was-nicht-im-repo-steht).
+
 ## Betrieb
 
 Logs:
@@ -544,6 +597,9 @@ keine Konfigurationsdatei, aus der sich das reproduzieren ließe — das rss-Plu
 hat für Abos keine API, und der Stand "was wurde schon gesehen" darf auch gar
 nicht deklarativ sein, sonst käme bei jedem Neuaufsetzen eine Flut alter
 Einträge.
+
+Dasselbe gilt für die Erinnerungen des reminder-Plugins: Sie liegen nur in
+`data/`.
 
 Dieses Repo ist deshalb die Anleitung und der Container, nicht der Zustand. Der
 Zustand ist `data/` — ignoriert, weil dort der Access Token des Bot-Accounts

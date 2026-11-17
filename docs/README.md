@@ -5,6 +5,9 @@
 Texte für angepinnte Nachrichten in den Matrix-Räumen.
 
 - `erste-changesets.md`: Pin für `#osm-fulda-erste-changesets:matrix.org`.
+- `neueroeffnungen.md`: Pin für `#osm-fulda-neueroeffnungen:matrix.org`.
+- `erinnerungen.md`: Pin für die übrigen Bot-Räume (Changesets, Hinweise,
+  Auffälligkeiten). Erklärt `!remind`.
 
 So aktualisierst du einen Pin:
 
