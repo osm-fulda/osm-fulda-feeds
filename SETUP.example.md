@@ -57,6 +57,10 @@ Aktueller Stand direkt aus der Datenbank:
     admins:
     - "@DEINE-MXID:HOMESERVER"
 
+Zweite Instanz `reminder` (Type `xyz.maubot.reminder`, gleicher Client):
+
+    default_timezone: 'Europe/Berlin'
+
 ## Zugang zur Web-UI
 
     ssh -L 29316:127.0.0.1:29316 BENUTZER@HOST
